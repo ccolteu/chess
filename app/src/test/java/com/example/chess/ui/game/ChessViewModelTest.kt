@@ -1,6 +1,7 @@
 package com.example.chess.ui.game
 
 import com.example.chess.data.GameStore
+import com.example.chess.engine.AiLevel
 import com.example.chess.domain.Move
 import com.example.chess.domain.Square
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +35,7 @@ class ChessViewModelTest {
   @Test
   fun savedUnfinishedGame_asksToResume() {
     val store = MemoryGameStore(listOf(move("e2", "e4"), move("e7", "e5")))
-    val vm = ChessViewModel(store, chooseAiMove = { null })
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
     assertTrue(vm.uiState.value.askResume)
     assertTrue(vm.uiState.value.moveRows.isEmpty())
   }
@@ -42,7 +43,7 @@ class ChessViewModelTest {
   @Test
   fun resume_restoresMoves() {
     val store = MemoryGameStore(listOf(move("e2", "e4"), move("e7", "e5")))
-    val vm = ChessViewModel(store, chooseAiMove = { null })
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
     vm.resumeSavedGame()
     assertFalse(vm.uiState.value.askResume)
     assertEquals(1, vm.uiState.value.moveRows.size)
@@ -53,7 +54,7 @@ class ChessViewModelTest {
   @Test
   fun decline_clearsSaveAndStartsFresh() {
     val store = MemoryGameStore(listOf(move("e2", "e4"), move("e7", "e5")))
-    val vm = ChessViewModel(store, chooseAiMove = { null })
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
     vm.startNewGameFromPrompt()
     assertFalse(vm.uiState.value.askResume)
     assertTrue(vm.uiState.value.moveRows.isEmpty())
@@ -62,7 +63,7 @@ class ChessViewModelTest {
 
   @Test
   fun requestNewGame_onEmptyBoard_doesNotAsk() {
-    val vm = ChessViewModel(MemoryGameStore(), chooseAiMove = { null })
+    val vm = ChessViewModel(MemoryGameStore(), chooseAiMove = { _, _ -> null })
     vm.requestNewGame()
     assertFalse(vm.uiState.value.askConfirmNewGame)
     assertTrue(vm.uiState.value.moveRows.isEmpty())
@@ -71,7 +72,7 @@ class ChessViewModelTest {
   @Test
   fun requestNewGame_withMoves_asksAndKeepsPosition() {
     val store = MemoryGameStore(listOf(move("e2", "e4"), move("e7", "e5")))
-    val vm = ChessViewModel(store, chooseAiMove = { null })
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
     vm.resumeSavedGame()
     vm.requestNewGame()
     assertTrue(vm.uiState.value.askConfirmNewGame)
@@ -82,7 +83,7 @@ class ChessViewModelTest {
   @Test
   fun dismissNewGameConfirm_keepsGame() {
     val store = MemoryGameStore(listOf(move("e2", "e4"), move("e7", "e5")))
-    val vm = ChessViewModel(store, chooseAiMove = { null })
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
     vm.resumeSavedGame()
     vm.requestNewGame()
     vm.dismissNewGameConfirm()
@@ -93,7 +94,7 @@ class ChessViewModelTest {
   @Test
   fun confirmNewGame_clearsGameAndSave() {
     val store = MemoryGameStore(listOf(move("e2", "e4"), move("e7", "e5")))
-    val vm = ChessViewModel(store, chooseAiMove = { null })
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
     vm.resumeSavedGame()
     vm.requestNewGame()
     vm.confirmNewGame()
@@ -103,9 +104,29 @@ class ChessViewModelTest {
   }
 
   @Test
+  fun setAiLevel_persistsAndShowsInUi() {
+    val store = MemoryGameStore()
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
+    assertEquals(AiLevel.MEDIUM, vm.uiState.value.aiLevel)
+    vm.setAiLevel(AiLevel.HARD)
+    assertEquals(AiLevel.HARD, vm.uiState.value.aiLevel)
+    assertEquals(AiLevel.HARD, store.loadAiLevel())
+  }
+
+  @Test
+  fun newGame_keepsAiLevel() {
+    val store = MemoryGameStore(listOf(move("e2", "e4"), move("e7", "e5")), AiLevel.EASY)
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
+    vm.resumeSavedGame()
+    vm.confirmNewGame()
+    assertEquals(AiLevel.EASY, vm.uiState.value.aiLevel)
+    assertEquals(AiLevel.EASY, store.loadAiLevel())
+  }
+
+  @Test
   fun playing_persistsMoves() = runTest(dispatcher) {
     val store = MemoryGameStore()
-    val vm = ChessViewModel(store, chooseAiMove = { move("e7", "e5") }, computeDispatcher = dispatcher)
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> move("e7", "e5") }, computeDispatcher = dispatcher)
     vm.onSquareClicked(Square.parse("e2"))
     vm.onSquareClicked(Square.parse("e4"))
     advanceUntilIdle()
@@ -115,8 +136,12 @@ class ChessViewModelTest {
   private fun move(from: String, to: String) = Move(Square.parse(from), Square.parse(to))
 }
 
-private class MemoryGameStore(initial: List<Move> = emptyList()) : GameStore {
+private class MemoryGameStore(
+  initial: List<Move> = emptyList(),
+  initialLevel: AiLevel = AiLevel.MEDIUM,
+) : GameStore {
   private var moves = initial.toList()
+  private var level = initialLevel
 
   override fun load(): List<Move> = moves
 
@@ -126,5 +151,11 @@ private class MemoryGameStore(initial: List<Move> = emptyList()) : GameStore {
 
   override fun clear() {
     moves = emptyList()
+  }
+
+  override fun loadAiLevel(): AiLevel = level
+
+  override fun saveAiLevel(level: AiLevel) {
+    this.level = level
   }
 }

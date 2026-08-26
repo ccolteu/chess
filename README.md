@@ -19,5 +19,6 @@ Open `~/agentic/chess` in Android Studio, or:
 ## v1
 
 - Legal moves (castling, en passant, promotion, pins)
-- Human vs AI (minimax, depth 3)
-- New game, last-move highlight, promotion chooser
+- Human vs AI with Easy / Medium / Hard (top bar)
+- Legal moves (castling, en passant, promotion, pins)
+- New game, undo, last-move highlight, promotion chooser

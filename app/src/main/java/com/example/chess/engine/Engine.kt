@@ -1,6 +1,7 @@
 package com.example.chess.engine
 
 import com.example.chess.domain.GameState
+import com.example.chess.domain.GameStatus
 import com.example.chess.domain.Move
 import com.example.chess.domain.PieceType
 import com.example.chess.domain.Rules
@@ -8,38 +9,45 @@ import com.example.chess.domain.Side
 import com.example.chess.domain.Square
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.random.Random
 
 object Engine {
-  const val DEPTH = 3
-
-  fun chooseMove(state: GameState, depth: Int = DEPTH): Move? {
-    val moves = Rules.legalMoves(state)
+  fun chooseMove(
+    state: GameState,
+    level: AiLevel = AiLevel.MEDIUM,
+    random: Random = Random.Default,
+  ): Move? {
+    val moves = orderedMoves(state, Rules.legalMoves(state))
     if (moves.isEmpty()) return null
-    var best = moves.first()
-    var bestScore = if (state.sideToMove == Side.WHITE) Int.MIN_VALUE else Int.MAX_VALUE
-    for (move in moves) {
-      val child = Rules.apply(state, move)
-      val score = minimax(child, depth - 1, Int.MIN_VALUE, Int.MAX_VALUE)
-      if (state.sideToMove == Side.WHITE && score > bestScore) {
-        bestScore = score
-        best = move
-      } else if (state.sideToMove == Side.BLACK && score < bestScore) {
-        bestScore = score
-        best = move
+    val white = state.sideToMove == Side.WHITE
+    val scored =
+      moves.map { move ->
+        val child = Rules.apply(state, move)
+        move to minimax(child, level.depth - 1, Int.MIN_VALUE, Int.MAX_VALUE, level.quiescence)
       }
-    }
-    return best
+    val sorted = if (white) scored.sortedByDescending { it.second } else scored.sortedBy { it.second }
+    val bestScore = sorted.first().second
+    val window =
+      if (level.topMoves <= 1) {
+        listOf(sorted.first())
+      } else {
+        sorted.filter { kotlin.math.abs(it.second - bestScore) <= 80 }.take(level.topMoves)
+      }
+    return window[random.nextInt(window.size)].first
   }
 
-  private fun minimax(state: GameState, depth: Int, alpha0: Int, beta0: Int): Int {
-    val moves = Rules.legalMoves(state)
-    if (depth == 0 || moves.isEmpty()) return evaluate(state)
+  private fun minimax(state: GameState, depth: Int, alpha0: Int, beta0: Int, quiescence: Boolean): Int {
+    val moves = orderedMoves(state, Rules.legalMoves(state))
+    if (moves.isEmpty()) return evaluate(state)
+    if (depth == 0) {
+      return if (quiescence) quiesce(state, alpha0, beta0, 4) else evaluate(state)
+    }
     var alpha = alpha0
     var beta = beta0
     if (state.sideToMove == Side.WHITE) {
       var best = Int.MIN_VALUE
       for (move in moves) {
-        best = max(best, minimax(Rules.apply(state, move), depth - 1, alpha, beta))
+        best = max(best, minimax(Rules.apply(state, move), depth - 1, alpha, beta, quiescence))
         alpha = max(alpha, best)
         if (beta <= alpha) break
       }
@@ -47,7 +55,7 @@ object Engine {
     } else {
       var best = Int.MAX_VALUE
       for (move in moves) {
-        best = min(best, minimax(Rules.apply(state, move), depth - 1, alpha, beta))
+        best = min(best, minimax(Rules.apply(state, move), depth - 1, alpha, beta, quiescence))
         beta = min(beta, best)
         if (beta <= alpha) break
       }
@@ -55,11 +63,73 @@ object Engine {
     }
   }
 
+  private fun quiesce(state: GameState, alpha0: Int, beta0: Int, remain: Int): Int {
+    if (state.status == GameStatus.CHECKMATE || state.status == GameStatus.STALEMATE) return evaluate(state)
+    val legal = Rules.legalMoves(state)
+    if (legal.isEmpty()) return evaluate(state)
+    if (remain == 0) return evaluate(state)
+
+    val inCheck = state.status == GameStatus.CHECK
+    val stand = evaluate(state)
+    var alpha = alpha0
+    var beta = beta0
+    val candidates =
+      if (inCheck) {
+        orderedMoves(state, legal)
+      } else {
+        orderedMoves(state, legal.filter { isCapture(state, it) })
+      }
+    if (!inCheck) {
+      if (state.sideToMove == Side.WHITE) {
+        if (stand >= beta) return stand
+        alpha = max(alpha, stand)
+      } else {
+        if (stand <= alpha) return stand
+        beta = min(beta, stand)
+      }
+    }
+    if (candidates.isEmpty()) return stand
+
+    if (state.sideToMove == Side.WHITE) {
+      var best = if (inCheck) Int.MIN_VALUE else stand
+      for (move in candidates) {
+        best = max(best, quiesce(Rules.apply(state, move), alpha, beta, remain - 1))
+        alpha = max(alpha, best)
+        if (beta <= alpha) break
+      }
+      return best
+    } else {
+      var best = if (inCheck) Int.MAX_VALUE else stand
+      for (move in candidates) {
+        best = min(best, quiesce(Rules.apply(state, move), alpha, beta, remain - 1))
+        beta = min(beta, best)
+        if (beta <= alpha) break
+      }
+      return best
+    }
+  }
+
+  private fun orderedMoves(state: GameState, moves: List<Move>): List<Move> =
+    moves.sortedByDescending { captureScore(state, it) }
+
+  private fun isCapture(state: GameState, move: Move): Boolean =
+    move.isEnPassant || state.pieceAt(move.to) != null
+
+  private fun captureScore(state: GameState, move: Move): Int {
+    val victimType =
+      when {
+        move.isEnPassant -> PieceType.PAWN
+        else -> state.pieceAt(move.to)?.type ?: return -1
+      }
+    val attacker = state.pieceAt(move.from)?.type ?: return 0
+    return material(victimType) * 16 - material(attacker)
+  }
+
   private fun evaluate(state: GameState): Int {
     when (state.status) {
-      com.example.chess.domain.GameStatus.CHECKMATE ->
+      GameStatus.CHECKMATE ->
         return if (state.sideToMove == Side.WHITE) -30_000 else 30_000
-      com.example.chess.domain.GameStatus.STALEMATE -> return 0
+      GameStatus.STALEMATE -> return 0
       else -> Unit
     }
     var score = 0

@@ -18,6 +18,7 @@ import com.example.chess.domain.PieceType
 import com.example.chess.domain.Rules
 import com.example.chess.domain.Side
 import com.example.chess.domain.Square
+import com.example.chess.engine.AiLevel
 import com.example.chess.engine.Engine
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -40,15 +41,17 @@ data class GameUiState(
   val canUndo: Boolean = false,
   val askResume: Boolean = false,
   val askConfirmNewGame: Boolean = false,
+  val aiLevel: AiLevel = AiLevel.MEDIUM,
 )
 
 class ChessViewModel(
   private val store: GameStore,
-  private val chooseAiMove: (GameState) -> Move? = { Engine.chooseMove(it) },
+  private val chooseAiMove: (GameState, AiLevel) -> Move? = { state, level -> Engine.chooseMove(state, level) },
   private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
   private val history = GameHistory()
   private var pendingSaved: List<Move> = emptyList()
+  private var aiLevel: AiLevel = store.loadAiLevel()
   private val game: GameState
     get() = history.current
   private val _ui = MutableStateFlow(toUi())
@@ -156,6 +159,13 @@ class ChessViewModel(
     _ui.value = toUi()
   }
 
+  fun setAiLevel(level: AiLevel) {
+    if (level == aiLevel) return
+    aiLevel = level
+    store.saveAiLevel(level)
+    _ui.update { it.copy(aiLevel = level) }
+  }
+
   private fun playHuman(move: Move) {
     history.apply(move)
     persist()
@@ -167,7 +177,7 @@ class ChessViewModel(
     _ui.value = toUi(aiThinking = true).copy(statusText = "Thinking…", selected = null, legalTargets = emptySet())
     viewModelScope.launch {
       val snapshot = game
-      val move = withContext(computeDispatcher) { chooseAiMove(snapshot) }
+      val move = withContext(computeDispatcher) { chooseAiMove(snapshot, aiLevel) }
       if (move != null) {
         history.apply(move)
         persist()
@@ -199,6 +209,7 @@ class ChessViewModel(
       isAiThinking = aiThinking,
       moveRows = history.rows,
       canUndo = history.canUndoTurn(aiThinking),
+      aiLevel = aiLevel,
     )
   }
 

@@ -22,7 +22,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -34,6 +37,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -57,6 +63,7 @@ import com.example.chess.domain.Piece
 import com.example.chess.domain.PieceType
 import com.example.chess.domain.Side
 import com.example.chess.domain.Square
+import com.example.chess.engine.AiLevel
 import com.example.chess.theme.Brass
 import com.example.chess.theme.ChessTheme
 import com.example.chess.theme.Cream
@@ -91,6 +98,7 @@ fun GameScreen(modifier: Modifier = Modifier) {
             actionIconContentColor = Brass,
           ),
         actions = {
+          AiLevelMenu(level = state.aiLevel, onPick = viewModel::setAiLevel, colors = actionColors)
           TextButton(onClick = viewModel::undo, enabled = state.canUndo, colors = actionColors) { Text("Undo") }
           TextButton(onClick = viewModel::requestNewGame, colors = actionColors) { Text("New game") }
         },
@@ -161,6 +169,29 @@ fun GameScreen(modifier: Modifier = Modifier) {
       confirmButton = { TextButton(onClick = viewModel::resumeSavedGame) { Text("Resume") } },
       dismissButton = { TextButton(onClick = viewModel::startNewGameFromPrompt) { Text("New game") } },
     )
+  }
+}
+
+@Composable
+private fun AiLevelMenu(
+  level: AiLevel,
+  onPick: (AiLevel) -> Unit,
+  colors: ButtonColors,
+) {
+  var open by remember { mutableStateOf(false) }
+  Box {
+    TextButton(onClick = { open = true }, colors = colors) { Text(level.label) }
+    DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+      AiLevel.entries.forEach { option ->
+        DropdownMenuItem(
+          text = { Text(option.label) },
+          onClick = {
+            onPick(option)
+            open = false
+          },
+        )
+      }
+    }
   }
 }
 
