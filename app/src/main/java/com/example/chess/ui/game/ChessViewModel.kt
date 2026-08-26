@@ -1,16 +1,25 @@
 package com.example.chess.ui.game
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import android.content.Context
+import com.example.chess.data.GameStore
+import com.example.chess.data.PrefsGameStore
+import com.example.chess.domain.GameHistory
+import com.example.chess.domain.GameState
 import com.example.chess.domain.GameStatus
 import com.example.chess.domain.Move
+import com.example.chess.domain.MoveRow
 import com.example.chess.domain.Piece
 import com.example.chess.domain.PieceType
 import com.example.chess.domain.Rules
 import com.example.chess.domain.Side
 import com.example.chess.domain.Square
-import com.example.chess.domain.startingGame
 import com.example.chess.engine.Engine
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,16 +36,40 @@ data class GameUiState(
   val isAiThinking: Boolean = false,
   val promotionMove: Move? = null,
   val gameOver: Boolean = false,
+  val moveRows: List<MoveRow> = emptyList(),
+  val canUndo: Boolean = false,
+  val askResume: Boolean = false,
+  val askConfirmNewGame: Boolean = false,
 )
 
-class ChessViewModel : ViewModel() {
-  private var game = Rules.withStatus(startingGame())
+class ChessViewModel(
+  private val store: GameStore,
+  private val chooseAiMove: (GameState) -> Move? = { Engine.chooseMove(it) },
+  private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
+) : ViewModel() {
+  private val history = GameHistory()
+  private var pendingSaved: List<Move> = emptyList()
+  private val game: GameState
+    get() = history.current
   private val _ui = MutableStateFlow(toUi())
   val uiState: StateFlow<GameUiState> = _ui
 
+  init {
+    val saved = store.load()
+    if (saved.isNotEmpty()) {
+      val probe = GameHistory().also { it.replaceWith(saved) }
+      if (probe.isResumable) {
+        pendingSaved = saved
+        _ui.value = toUi().copy(askResume = true)
+      } else {
+        store.clear()
+      }
+    }
+  }
+
   fun onSquareClicked(square: Square) {
     val ui = _ui.value
-    if (ui.isAiThinking || ui.gameOver || ui.promotionMove != null) return
+    if (ui.askResume || ui.isAiThinking || ui.gameOver || ui.promotionMove != null) return
     if (game.sideToMove != Side.WHITE) return
 
     val legal = Rules.legalMoves(game)
@@ -77,34 +110,80 @@ class ChessViewModel : ViewModel() {
     _ui.update { it.copy(promotionMove = null) }
   }
 
+  fun requestNewGame() {
+    if (history.moves.isEmpty()) {
+      newGame()
+    } else {
+      _ui.update { it.copy(askConfirmNewGame = true) }
+    }
+  }
+
+  fun confirmNewGame() {
+    newGame()
+  }
+
+  fun dismissNewGameConfirm() {
+    _ui.update { it.copy(askConfirmNewGame = false) }
+  }
+
   fun newGame() {
-    game = Rules.withStatus(startingGame())
+    history.reset()
     pendingPromotions = emptyList()
+    pendingSaved = emptyList()
+    persist()
+    _ui.value = toUi()
+  }
+
+  fun resumeSavedGame() {
+    if (pendingSaved.isEmpty()) return
+    history.replaceWith(pendingSaved)
+    pendingSaved = emptyList()
+    persist()
+    _ui.value = toUi()
+    if (game.sideToMove == Side.BLACK && !isOver()) startAi()
+  }
+
+  fun startNewGameFromPrompt() {
+    pendingSaved = emptyList()
+    newGame()
+  }
+
+  fun undo() {
+    if (!_ui.value.canUndo) return
+    history.undoTurn()
+    pendingPromotions = emptyList()
+    persist()
     _ui.value = toUi()
   }
 
   private fun playHuman(move: Move) {
-    game = Rules.apply(game, move)
-    _ui.value = toUi(last = move)
+    history.apply(move)
+    persist()
+    _ui.value = toUi()
     if (!isOver()) startAi()
   }
 
   private fun startAi() {
-    _ui.update { it.copy(isAiThinking = true, statusText = "Thinking…", selected = null, legalTargets = emptySet()) }
+    _ui.value = toUi(aiThinking = true).copy(statusText = "Thinking…", selected = null, legalTargets = emptySet())
     viewModelScope.launch {
       val snapshot = game
-      val move = withContext(Dispatchers.Default) { Engine.chooseMove(snapshot) }
+      val move = withContext(computeDispatcher) { chooseAiMove(snapshot) }
       if (move != null) {
-        game = Rules.apply(game, move)
+        history.apply(move)
+        persist()
       }
-      _ui.value = toUi(last = move ?: _ui.value.lastMove).copy(isAiThinking = false)
+      _ui.value = toUi()
     }
+  }
+
+  private fun persist() {
+    store.save(history.moves)
   }
 
   private fun isOver(): Boolean =
     game.status == GameStatus.CHECKMATE || game.status == GameStatus.STALEMATE
 
-  private fun toUi(last: Move? = null): GameUiState {
+  private fun toUi(aiThinking: Boolean = false): GameUiState {
     val text =
       when (game.status) {
         GameStatus.CHECKMATE -> if (game.sideToMove == Side.WHITE) "Checkmate — you lose" else "Checkmate — you win"
@@ -114,9 +193,18 @@ class ChessViewModel : ViewModel() {
       }
     return GameUiState(
       pieces = game.squares,
-      lastMove = last,
+      lastMove = history.lastMove,
       statusText = text,
       gameOver = isOver(),
+      isAiThinking = aiThinking,
+      moveRows = history.rows,
+      canUndo = history.canUndoTurn(aiThinking),
     )
+  }
+
+  companion object {
+    fun factory(context: Context): ViewModelProvider.Factory = viewModelFactory {
+      initializer { ChessViewModel(PrefsGameStore(context.applicationContext)) }
+    }
   }
 }
