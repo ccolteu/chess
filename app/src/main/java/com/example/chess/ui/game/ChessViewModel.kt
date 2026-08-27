@@ -18,6 +18,7 @@ import com.example.chess.domain.PieceType
 import com.example.chess.domain.Rules
 import com.example.chess.domain.Side
 import com.example.chess.domain.Square
+import com.example.chess.domain.capturedOf
 import com.example.chess.engine.AiLevel
 import com.example.chess.engine.Engine
 import kotlinx.coroutines.CoroutineDispatcher
@@ -33,7 +34,6 @@ data class GameUiState(
   val selected: Square? = null,
   val legalTargets: Set<Square> = emptySet(),
   val lastMove: Move? = null,
-  val statusText: String = "Your turn",
   val isAiThinking: Boolean = false,
   val promotionMove: Move? = null,
   val gameOver: Boolean = false,
@@ -42,15 +42,29 @@ data class GameUiState(
   val askResume: Boolean = false,
   val askConfirmNewGame: Boolean = false,
   val aiLevel: AiLevel = AiLevel.MEDIUM,
+  val cpuCaptures: List<Piece> = emptyList(),
+  val playerCaptures: List<Piece> = emptyList(),
+  val cpuThinkMs: Long = 0L,
+  val playerThinkMs: Long = 0L,
+  val clockRunning: Side? = null,
+  val clockStartedAt: Long = 0L,
 )
 
 class ChessViewModel(
   private val store: GameStore,
   private val chooseAiMove: (GameState, AiLevel) -> Move? = { state, level -> Engine.chooseMove(state, level) },
   private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
+  private val nowMs: () -> Long = { System.currentTimeMillis() },
 ) : ViewModel() {
   private val history = GameHistory()
   private var pendingSaved: List<Move> = emptyList()
+  private var pendingPromotions: List<Move> = emptyList()
+  private var playerBaseMs = 0L
+  private var cpuBaseMs = 0L
+  private val playerLegs = mutableListOf<Long>()
+  private val cpuLegs = mutableListOf<Long>()
+  private var running: Side? = null
+  private var turnStartedAt = 0L
   private var aiLevel: AiLevel = store.loadAiLevel()
   private val game: GameState
     get() = history.current
@@ -63,10 +77,16 @@ class ChessViewModel(
       val probe = GameHistory().also { it.replaceWith(saved) }
       if (probe.isResumable) {
         pendingSaved = saved
+        playerBaseMs = store.loadPlayerMs()
+        cpuBaseMs = store.loadCpuMs()
         _ui.value = toUi().copy(askResume = true)
       } else {
         store.clear()
       }
+    }
+    if (pendingSaved.isEmpty()) {
+      startRunning(Side.WHITE)
+      _ui.value = toUi()
     }
   }
 
@@ -98,8 +118,6 @@ class ChessViewModel(
       _ui.update { it.copy(selected = null, legalTargets = emptySet()) }
     }
   }
-
-  private var pendingPromotions: List<Move> = emptyList()
 
   fun onPromotionPicked(type: PieceType) {
     val move = pendingPromotions.firstOrNull { it.promotion == type } ?: return
@@ -133,6 +151,8 @@ class ChessViewModel(
     history.reset()
     pendingPromotions = emptyList()
     pendingSaved = emptyList()
+    resetClocks()
+    startRunning(Side.WHITE)
     persist()
     _ui.value = toUi()
   }
@@ -141,6 +161,11 @@ class ChessViewModel(
     if (pendingSaved.isEmpty()) return
     history.replaceWith(pendingSaved)
     pendingSaved = emptyList()
+    when {
+      game.sideToMove == Side.BLACK && !isOver() -> startRunning(Side.BLACK)
+      isOver() -> startRunning(null)
+      else -> startRunning(Side.WHITE)
+    }
     persist()
     _ui.value = toUi()
     if (game.sideToMove == Side.BLACK && !isOver()) startAi()
@@ -153,8 +178,12 @@ class ChessViewModel(
 
   fun undo() {
     if (!_ui.value.canUndo) return
+    val removing = if (history.moves.size % 2 == 0) 2 else 1
     history.undoTurn()
     pendingPromotions = emptyList()
+    if (removing >= 2 && cpuLegs.isNotEmpty()) cpuLegs.removeAt(cpuLegs.lastIndex)
+    if (playerLegs.isNotEmpty()) playerLegs.removeAt(playerLegs.lastIndex)
+    startRunning(Side.WHITE)
     persist()
     _ui.value = toUi()
   }
@@ -167,49 +196,105 @@ class ChessViewModel(
   }
 
   private fun playHuman(move: Move) {
+    val now = nowMs()
+    commitRunning(now)
     history.apply(move)
+    if (isOver()) {
+      startRunning(null, now)
+      persist()
+      _ui.value = toUi()
+      return
+    }
+    startRunning(Side.BLACK, now)
     persist()
     _ui.value = toUi()
-    if (!isOver()) startAi()
+    startAi()
   }
 
   private fun startAi() {
-    _ui.value = toUi(aiThinking = true).copy(statusText = "Thinking…", selected = null, legalTargets = emptySet())
+    _ui.value = toUi(aiThinking = true).copy(selected = null, legalTargets = emptySet())
     viewModelScope.launch {
       val snapshot = game
       val move = withContext(computeDispatcher) { chooseAiMove(snapshot, aiLevel) }
-      if (move != null) {
-        history.apply(move)
-        persist()
-      }
+      val now = nowMs()
+      commitRunning(now)
+      if (move != null) history.apply(move)
+      if (!isOver() && game.sideToMove == Side.WHITE) startRunning(Side.WHITE, now) else startRunning(null, now)
+      persist()
       _ui.value = toUi()
     }
   }
 
+  private fun resetClocks() {
+    playerBaseMs = 0L
+    cpuBaseMs = 0L
+    playerLegs.clear()
+    cpuLegs.clear()
+    running = null
+    turnStartedAt = 0L
+  }
+
+  private fun startRunning(side: Side?, now: Long = nowMs()) {
+    running = side
+    turnStartedAt = now
+  }
+
+  private fun commitRunning(now: Long) {
+    val extra = if (running != null) (now - turnStartedAt).coerceAtLeast(0) else 0L
+    when (running) {
+      Side.WHITE -> playerLegs += extra
+      Side.BLACK -> cpuLegs += extra
+      null -> {}
+    }
+    running = null
+  }
+
+  private fun committedPlayerMs(): Long = playerBaseMs + playerLegs.sum()
+
+  private fun committedCpuMs(): Long = cpuBaseMs + cpuLegs.sum()
+
+  private fun snapshotClocks(): Pair<Long, Long> {
+    val extra = if (running != null) (nowMs() - turnStartedAt).coerceAtLeast(0) else 0L
+    return when (running) {
+      Side.WHITE -> committedPlayerMs() + extra to committedCpuMs()
+      Side.BLACK -> committedPlayerMs() to committedCpuMs() + extra
+      null -> committedPlayerMs() to committedCpuMs()
+    }
+  }
+
+  fun persistClocks() {
+    val (player, cpu) = snapshotClocks()
+    store.saveClocks(player, cpu)
+  }
+
   private fun persist() {
     store.save(history.moves)
+    store.saveClocks(committedPlayerMs(), committedCpuMs())
+  }
+
+  override fun onCleared() {
+    persistClocks()
+    super.onCleared()
   }
 
   private fun isOver(): Boolean =
     game.status == GameStatus.CHECKMATE || game.status == GameStatus.STALEMATE
 
   private fun toUi(aiThinking: Boolean = false): GameUiState {
-    val text =
-      when (game.status) {
-        GameStatus.CHECKMATE -> if (game.sideToMove == Side.WHITE) "Checkmate — you lose" else "Checkmate — you win"
-        GameStatus.STALEMATE -> "Stalemate — draw"
-        GameStatus.CHECK -> if (game.sideToMove == Side.WHITE) "Check — your turn" else "Check"
-        GameStatus.IN_PROGRESS -> if (game.sideToMove == Side.WHITE) "Your turn" else "Black to move"
-      }
     return GameUiState(
       pieces = game.squares,
       lastMove = history.lastMove,
-      statusText = text,
       gameOver = isOver(),
       isAiThinking = aiThinking,
       moveRows = history.rows,
       canUndo = history.canUndoTurn(aiThinking),
       aiLevel = aiLevel,
+      cpuCaptures = capturedOf(Side.WHITE, game.squares),
+      playerCaptures = capturedOf(Side.BLACK, game.squares),
+      cpuThinkMs = committedCpuMs(),
+      playerThinkMs = committedPlayerMs(),
+      clockRunning = running,
+      clockStartedAt = turnStartedAt,
     )
   }
 

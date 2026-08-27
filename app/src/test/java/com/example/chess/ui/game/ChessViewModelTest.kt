@@ -133,15 +133,66 @@ class ChessViewModelTest {
     assertEquals(listOf(move("e2", "e4"), move("e7", "e5")), store.load())
   }
 
+  @Test
+  fun thinkTimes_accumulateThenClearOnUndoAndNewGame() = runTest(dispatcher) {
+    val clock = ArrayDeque(listOf(0L, 800L, 2_400L, 3_000L, 3_300L, 3_900L, 4_000L))
+    val store = MemoryGameStore()
+    val vm =
+      ChessViewModel(
+        store,
+        chooseAiMove = { _, _ -> move("e7", "e5") },
+        computeDispatcher = dispatcher,
+        nowMs = { clock.removeFirst() },
+      )
+    vm.onSquareClicked(Square.parse("e2"))
+    vm.onSquareClicked(Square.parse("e4"))
+    advanceUntilIdle()
+    assertEquals(1_600L, vm.uiState.value.cpuThinkMs)
+    assertEquals(800L, vm.uiState.value.playerThinkMs)
+    assertEquals(800L, store.loadPlayerMs())
+    assertEquals(1_600L, store.loadCpuMs())
+    vm.undo()
+    assertEquals(0L, vm.uiState.value.cpuThinkMs)
+    assertEquals(0L, vm.uiState.value.playerThinkMs)
+    vm.onSquareClicked(Square.parse("e2"))
+    vm.onSquareClicked(Square.parse("e4"))
+    advanceUntilIdle()
+    assertEquals(600L, vm.uiState.value.cpuThinkMs)
+    assertEquals(300L, vm.uiState.value.playerThinkMs)
+    vm.newGame()
+    assertEquals(0L, vm.uiState.value.cpuThinkMs)
+    assertEquals(0L, vm.uiState.value.playerThinkMs)
+    assertEquals(0L, store.loadPlayerMs())
+    assertEquals(0L, store.loadCpuMs())
+  }
+
+  @Test
+  fun resume_restoresThinkTimes() {
+    val store =
+      MemoryGameStore(
+        initial = listOf(move("e2", "e4"), move("e7", "e5")),
+        playerMs = 12_000L,
+        cpuMs = 9_000L,
+      )
+    val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
+    vm.resumeSavedGame()
+    assertEquals(12_000L, vm.uiState.value.playerThinkMs)
+    assertEquals(9_000L, vm.uiState.value.cpuThinkMs)
+  }
+
   private fun move(from: String, to: String) = Move(Square.parse(from), Square.parse(to))
 }
 
 private class MemoryGameStore(
   initial: List<Move> = emptyList(),
   initialLevel: AiLevel = AiLevel.MEDIUM,
+  playerMs: Long = 0L,
+  cpuMs: Long = 0L,
 ) : GameStore {
   private var moves = initial.toList()
   private var level = initialLevel
+  private var savedPlayerMs = playerMs
+  private var savedCpuMs = cpuMs
 
   override fun load(): List<Move> = moves
 
@@ -151,11 +202,22 @@ private class MemoryGameStore(
 
   override fun clear() {
     moves = emptyList()
+    savedPlayerMs = 0L
+    savedCpuMs = 0L
   }
 
   override fun loadAiLevel(): AiLevel = level
 
   override fun saveAiLevel(level: AiLevel) {
     this.level = level
+  }
+
+  override fun loadPlayerMs(): Long = savedPlayerMs
+
+  override fun loadCpuMs(): Long = savedCpuMs
+
+  override fun saveClocks(playerMs: Long, cpuMs: Long) {
+    savedPlayerMs = playerMs
+    savedCpuMs = cpuMs
   }
 }

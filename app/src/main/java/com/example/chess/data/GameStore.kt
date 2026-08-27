@@ -15,6 +15,12 @@ interface GameStore {
   fun loadAiLevel(): AiLevel
 
   fun saveAiLevel(level: AiLevel)
+
+  fun loadPlayerMs(): Long
+
+  fun loadCpuMs(): Long
+
+  fun saveClocks(playerMs: Long, cpuMs: Long)
 }
 
 class PrefsGameStore(context: Context) : GameStore {
@@ -31,7 +37,7 @@ class PrefsGameStore(context: Context) : GameStore {
   }
 
   override fun clear() {
-    prefs.edit().remove(KEY).apply()
+    prefs.edit().remove(KEY).remove(KEY_PLAYER_MS).remove(KEY_CPU_MS).apply()
   }
 
   override fun loadAiLevel(): AiLevel = AiLevel.fromStorage(prefs.getString(KEY_LEVEL, null))
@@ -40,9 +46,19 @@ class PrefsGameStore(context: Context) : GameStore {
     prefs.edit().putString(KEY_LEVEL, level.name).apply()
   }
 
+  override fun loadPlayerMs(): Long = prefs.getLong(KEY_PLAYER_MS, 0L)
+
+  override fun loadCpuMs(): Long = prefs.getLong(KEY_CPU_MS, 0L)
+
+  override fun saveClocks(playerMs: Long, cpuMs: Long) {
+    prefs.edit().putLong(KEY_PLAYER_MS, playerMs).putLong(KEY_CPU_MS, cpuMs).apply()
+  }
+
   private companion object {
     const val PREFS = "chess_game"
     const val KEY = "saved_moves"
     const val KEY_LEVEL = "ai_level"
+    const val KEY_PLAYER_MS = "player_ms"
+    const val KEY_CPU_MS = "cpu_ms"
   }
 }
