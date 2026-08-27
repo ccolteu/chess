@@ -20,7 +20,7 @@ public final class CompositeChessBoard {
     BufferedImage oak = scale(ImageIO.read(oakPath.toFile()), size + cell, size + cell);
     BufferedImage walnut = scale(ImageIO.read(walnutPath.toFile()), size + cell, size + cell);
     oak = contrast(oak, 1.08f, 1.04f);
-    walnut = contrast(walnut, 1.1f, 0.92f);
+    walnut = contrast(walnut, 1.06f, 1.28f);
 
     BufferedImage board = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
     Graphics2D g = board.createGraphics();

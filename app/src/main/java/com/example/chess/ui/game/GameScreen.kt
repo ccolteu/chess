@@ -286,15 +286,15 @@ private fun GameActions(state: GameUiState, viewModel: ChessViewModel) {
 }
 
 @Composable
-private fun SeatIcon(@DrawableRes icon: Int, contentDescription: String) {
+private fun SeatIcon(@DrawableRes icon: Int, contentDescription: String, size: Dp) {
   Box(
-    modifier = Modifier.size(34.dp).hudChrome(),
+    modifier = Modifier.size(size).hudChrome(),
     contentAlignment = Alignment.Center,
   ) {
     Image(
       painter = painterResource(icon),
       contentDescription = contentDescription,
-      modifier = Modifier.size(18.dp),
+      modifier = Modifier.size(size * 0.53f),
       colorFilter = ColorFilter.tint(Brass),
     )
   }
@@ -318,7 +318,7 @@ private fun SeatStrip(
     modifier = modifier.height(stripHeight).padding(horizontal = contentPadding),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    SeatIcon(icon = icon, contentDescription = iconDescription)
+    SeatIcon(icon = icon, contentDescription = iconDescription, size = stripHeight)
     LazyRow(
       modifier = Modifier.weight(1f).height(pieceSize).padding(horizontal = 8.dp),
       verticalAlignment = Alignment.CenterVertically,
@@ -331,29 +331,32 @@ private fun SeatStrip(
   }
 }
 
+private val ClockWidth = 108.dp
+
 @Composable
 private fun SeatClock(timeText: String, running: Boolean, height: Dp) {
   Box(
     modifier =
       Modifier
         .height(height)
-        .widthIn(min = 88.dp)
+        .width(ClockWidth)
         .hudChrome()
-        .padding(horizontal = 12.dp),
-    contentAlignment = Alignment.Center,
+        .padding(start = 10.dp, end = 12.dp),
+    contentAlignment = Alignment.CenterEnd,
   ) {
     Text(
       text = timeText,
       style =
         TextStyle(
           fontFamily = FontFamily.Monospace,
+          fontFeatureSettings = "tnum, lnum",
           fontWeight = FontWeight.SemiBold,
           fontSize = 20.sp,
-          letterSpacing = 0.8.sp,
+          letterSpacing = 0.4.sp,
           lineHeight = 24.sp,
         ),
       color = if (running) Brass else Cream.copy(alpha = 0.7f),
-      textAlign = TextAlign.Center,
+      textAlign = TextAlign.End,
       maxLines = 1,
     )
   }
@@ -361,7 +364,7 @@ private fun SeatClock(timeText: String, running: Boolean, height: Dp) {
 
 internal fun formatThinkTime(ms: Long): String {
   val totalSec = (ms / 1000).coerceAtLeast(0)
-  return "%d:%02d".format(totalSec / 60, totalSec % 60)
+  return "%02d:%02d".format(totalSec / 60, totalSec % 60)
 }
 
 @Composable
