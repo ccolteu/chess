@@ -91,14 +91,12 @@ import com.example.chess.theme.NotepadBinding
 import com.example.chess.theme.NotepadMargin
 import com.example.chess.theme.NotepadPaper
 import com.example.chess.theme.NotepadRule
-import com.example.chess.theme.OakSquare
 import com.example.chess.theme.PencilLead
 import com.example.chess.theme.PieceCream
-import com.example.chess.theme.PieceEspresso
+import com.example.chess.theme.PieceOxblood
 import com.example.chess.theme.SquareWash
 import com.example.chess.theme.WalnutBackground
 import com.example.chess.theme.WalnutRail
-import com.example.chess.theme.WalnutSquare
 
 @Composable
 fun GameScreen(modifier: Modifier = Modifier) {
@@ -207,14 +205,14 @@ private fun LandscapePlay(
   modifier: Modifier = Modifier,
 ) {
   BoxWithConstraints(modifier) {
-    val pieceSize = boardPieceSize(maxHeight - edgeInset - BoardFrameInset * 2)
+    val pieceSize = boardPieceSize(maxHeight - edgeInset * 2 - BoardFrameInset * 2)
     Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.Top) {
       PlayBoard(
         state = state,
         viewModel = viewModel,
         modifier =
           Modifier
-            .padding(start = edgeInset, top = edgeInset)
+            .padding(start = edgeInset, top = edgeInset, bottom = edgeInset)
             .fillMaxHeight()
             .aspectRatio(1f, matchHeightConstraintsFirst = true),
       )
@@ -800,17 +798,22 @@ private fun ChessBoard(
 ) {
   BoxWithConstraints(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
     val tile = maxWidth / 8
-    Column {
+    Image(
+      painter = painterResource(R.drawable.board_walnut_oak),
+      contentDescription = null,
+      modifier = Modifier.fillMaxSize(),
+      contentScale = ContentScale.FillBounds,
+    )
+    Column(modifier = Modifier.fillMaxSize()) {
       for (displayRank in 7 downTo 0) {
         Row {
           for (file in 0..7) {
             val square = Square(file, displayRank)
-            val light = (file + displayRank) % 2 == 1
             val marked = selected == square || square in lastMove
             Box(
               modifier =
                 Modifier.size(tile)
-                  .drawBehind { drawWoodSquare(light, selected == square) }
+                  .then(if (selected == square) Modifier.background(SquareWash) else Modifier)
                   .then(if (marked) Modifier.border(2.dp, Brass) else Modifier)
                   .clickable(enabled = enabled) { onSquareClick(square) },
               contentAlignment = Alignment.Center,
@@ -835,31 +838,12 @@ private fun ChessBoard(
 @Composable
 private fun PieceGlyph(piece: Piece, size: Dp) {
   Image(
-    painter = painterResource(pieceDrawableRes(piece)),
+    painter = painterResource(pieceDrawableRes(Piece(piece.type, Side.WHITE))),
     contentDescription = null,
     modifier = Modifier.size(size),
     colorFilter =
-      ColorFilter.tint(if (piece.side == Side.WHITE) PieceCream else PieceEspresso, BlendMode.Modulate),
+      ColorFilter.tint(if (piece.side == Side.WHITE) PieceCream else PieceOxblood, BlendMode.Modulate),
   )
-}
-
-private fun DrawScope.drawWoodSquare(light: Boolean, selected: Boolean) {
-  val base = if (light) OakSquare else WalnutSquare
-  drawRect(base)
-  val streak = if (light) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.14f)
-  val step = size.width / 8f
-  if (light) {
-    for (i in 0..7) {
-      drawRect(color = streak, topLeft = Offset(i * step + 1.2f, 0f), size = Size(1.1f, size.height))
-    }
-  } else {
-    for (i in 0..7) {
-      drawRect(color = streak, topLeft = Offset(0f, i * step + 1.2f), size = Size(size.width, 1.1f))
-    }
-  }
-  if (selected) {
-    drawRect(SquareWash)
-  }
 }
 
 @Preview(showBackground = true)
