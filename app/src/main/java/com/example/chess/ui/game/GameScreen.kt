@@ -19,20 +19,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -40,7 +36,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,8 +59,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
@@ -129,27 +122,23 @@ fun GameScreen(modifier: Modifier = Modifier) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
       val landscape = maxWidth > maxHeight
-      val systemBarHeight = systemBarHeight()
       Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = Color.Transparent,
-        contentWindowInsets = if (landscape) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
-      ) { padding ->
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+      ) {
         if (landscape) {
           LandscapePlay(
             state = state,
             viewModel = viewModel,
-            systemBarHeight = systemBarHeight,
-            modifier =
-              Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom)),
+            edgeInset = ScreenInnerPad,
+            modifier = Modifier.fillMaxSize().padding(horizontal = SafeEdgePad),
           )
         } else {
           PortraitPlay(
             state = state,
             viewModel = viewModel,
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = SafeEdgePad),
           )
         }
       }
@@ -158,16 +147,8 @@ fun GameScreen(modifier: Modifier = Modifier) {
   GameDialogs(state = state, viewModel = viewModel)
 }
 
-@Composable
-private fun systemBarHeight(): Dp {
-  val density = LocalDensity.current
-  val layoutDirection = LocalLayoutDirection.current
-  val insets = WindowInsets.systemBars
-  val top = with(density) { insets.getTop(this).toDp() }
-  if (top > 0.dp) return top
-  return with(density) { insets.getLeft(this, layoutDirection).toDp() }
-}
-
+private val SafeEdgePad = 36.dp
+private val ScreenInnerPad = 8.dp
 private val BoardChromePad = 12.dp
 private val BoardFrameInset = 18.dp
 private val ControlChromeGap = 10.dp
@@ -222,18 +203,18 @@ private fun PortraitPlay(state: GameUiState, viewModel: ChessViewModel, modifier
 private fun LandscapePlay(
   state: GameUiState,
   viewModel: ChessViewModel,
-  systemBarHeight: Dp,
+  edgeInset: Dp,
   modifier: Modifier = Modifier,
 ) {
   BoxWithConstraints(modifier) {
-    val pieceSize = boardPieceSize(maxHeight - systemBarHeight - BoardFrameInset * 2)
+    val pieceSize = boardPieceSize(maxHeight - edgeInset - BoardFrameInset * 2)
     Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.Top) {
       PlayBoard(
         state = state,
         viewModel = viewModel,
         modifier =
           Modifier
-            .padding(start = systemBarHeight, top = systemBarHeight)
+            .padding(start = edgeInset, top = edgeInset)
             .fillMaxHeight()
             .aspectRatio(1f, matchHeightConstraintsFirst = true),
       )
@@ -242,7 +223,7 @@ private fun LandscapePlay(
           Modifier
             .weight(1f)
             .fillMaxHeight()
-            .padding(start = systemBarHeight, end = systemBarHeight, top = systemBarHeight, bottom = 8.dp),
+            .padding(start = edgeInset, end = edgeInset, top = edgeInset, bottom = edgeInset),
         horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(ControlChromeGap),
       ) {
@@ -277,7 +258,22 @@ private fun LandscapePlay(
 
 @Composable
 private fun HudBar(state: GameUiState, viewModel: ChessViewModel, modifier: Modifier = Modifier) {
-  Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+  Row(
+    modifier = modifier.fillMaxWidth(),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.SpaceBetween,
+  ) {
+    Text(
+      text = "Chess",
+      style =
+        hudLabelStyle.copy(
+          fontSize = 26.sp,
+          fontWeight = FontWeight.SemiBold,
+          letterSpacing = 0.8.sp,
+          lineHeight = 30.sp,
+        ),
+      color = Cream,
+    )
     GameActions(state = state, viewModel = viewModel)
   }
 }
@@ -697,8 +693,8 @@ private fun MoveList(rows: List<MoveRow>, modifier: Modifier = Modifier) {
     NotepadPencil(
       modifier =
         Modifier
-          .align(Alignment.TopEnd)
-          .padding(top = 56.dp, end = 28.dp)
+          .align(Alignment.CenterEnd)
+          .padding(end = 28.dp)
           .graphicsLayer { rotationZ = 14f },
     )
   }
