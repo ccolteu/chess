@@ -7,6 +7,7 @@ import com.cc.chess.domain.PieceType
 import com.cc.chess.domain.Rules
 import com.cc.chess.domain.Side
 import com.cc.chess.domain.Square
+import com.cc.chess.domain.isOver
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
@@ -19,12 +20,33 @@ object Engine {
   ): Move? {
     val moves = orderedMoves(state, Rules.legalMoves(state))
     if (moves.isEmpty()) return null
+    val budget =
+      SearchBudget(
+        deadlineNanos =
+          if (level.thinkMs <= 0L) Long.MAX_VALUE else System.nanoTime() + level.thinkMs * 1_000_000L,
+      )
     val white = state.sideToMove == Side.WHITE
-    val scored =
-      moves.map { move ->
-        val child = Rules.apply(state, move)
-        move to minimax(child, level.depth - 1, Int.MIN_VALUE, Int.MAX_VALUE, level.quiescence)
+    var ordered = moves
+    var chosen = moves.first()
+    val startDepth = if (level.thinkMs > 0L) 1 else level.depth
+    for (depth in startDepth..level.depth) {
+      val scored = searchRoot(state, ordered, depth, level, budget)
+      val complete = scored.size == ordered.size
+      if (complete) {
+        chosen = pickMove(scored, white, level, random)
+        ordered = scored.map { it.first }
       }
+      if (budget.timedOut || !complete) break
+    }
+    return chosen
+  }
+
+  private fun pickMove(
+    scored: List<Pair<Move, Int>>,
+    white: Boolean,
+    level: AiLevel,
+    random: Random,
+  ): Move {
     val sorted = if (white) scored.sortedByDescending { it.second } else scored.sortedBy { it.second }
     val bestScore = sorted.first().second
     val window =
@@ -36,35 +58,68 @@ object Engine {
     return window[random.nextInt(window.size)].first
   }
 
-  private fun minimax(state: GameState, depth: Int, alpha0: Int, beta0: Int, quiescence: Boolean): Int {
+  private fun searchRoot(
+    state: GameState,
+    moves: List<Move>,
+    depth: Int,
+    level: AiLevel,
+    budget: SearchBudget,
+  ): List<Pair<Move, Int>> {
+    val white = state.sideToMove == Side.WHITE
+    val pruneRoot = level.topMoves <= 1
+    var alpha = -INF
+    var beta = INF
+    val scored = ArrayList<Pair<Move, Int>>(moves.size)
+    for (move in moves) {
+      if (budget.expired()) break
+      val score = minimax(Rules.apply(state, move), depth - 1, alpha, beta, level.quiescence, budget)
+      if (budget.timedOut) break
+      scored += move to score
+      if (pruneRoot) {
+        if (white) alpha = max(alpha, score) else beta = min(beta, score)
+      }
+    }
+    return scored
+  }
+
+  private fun minimax(
+    state: GameState,
+    depth: Int,
+    alpha0: Int,
+    beta0: Int,
+    quiescence: Boolean,
+    budget: SearchBudget,
+  ): Int {
+    if (budget.expired()) return evaluate(state)
     val moves = orderedMoves(state, Rules.legalMoves(state))
     if (moves.isEmpty()) return evaluate(state)
     if (depth == 0) {
-      return if (quiescence) quiesce(state, alpha0, beta0, 4) else evaluate(state)
+      return if (quiescence) quiesce(state, alpha0, beta0, 2, budget) else evaluate(state)
     }
     var alpha = alpha0
     var beta = beta0
     if (state.sideToMove == Side.WHITE) {
-      var best = Int.MIN_VALUE
+      var best = -INF
       for (move in moves) {
-        best = max(best, minimax(Rules.apply(state, move), depth - 1, alpha, beta, quiescence))
+        if (budget.expired()) break
+        best = max(best, minimax(Rules.apply(state, move), depth - 1, alpha, beta, quiescence, budget))
         alpha = max(alpha, best)
         if (beta <= alpha) break
       }
       return best
-    } else {
-      var best = Int.MAX_VALUE
-      for (move in moves) {
-        best = min(best, minimax(Rules.apply(state, move), depth - 1, alpha, beta, quiescence))
-        beta = min(beta, best)
-        if (beta <= alpha) break
-      }
-      return best
     }
+    var best = INF
+    for (move in moves) {
+      if (budget.expired()) break
+      best = min(best, minimax(Rules.apply(state, move), depth - 1, alpha, beta, quiescence, budget))
+      beta = min(beta, best)
+      if (beta <= alpha) break
+    }
+    return best
   }
 
-  private fun quiesce(state: GameState, alpha0: Int, beta0: Int, remain: Int): Int {
-    if (state.status == GameStatus.CHECKMATE || state.status == GameStatus.STALEMATE) return evaluate(state)
+  private fun quiesce(state: GameState, alpha0: Int, beta0: Int, remain: Int, budget: SearchBudget): Int {
+    if (budget.expired() || state.status.isOver()) return evaluate(state)
     val legal = Rules.legalMoves(state)
     if (legal.isEmpty()) return evaluate(state)
     if (remain == 0) return evaluate(state)
@@ -91,22 +146,23 @@ object Engine {
     if (candidates.isEmpty()) return stand
 
     if (state.sideToMove == Side.WHITE) {
-      var best = if (inCheck) Int.MIN_VALUE else stand
+      var best = if (inCheck) -INF else stand
       for (move in candidates) {
-        best = max(best, quiesce(Rules.apply(state, move), alpha, beta, remain - 1))
+        if (budget.expired()) break
+        best = max(best, quiesce(Rules.apply(state, move), alpha, beta, remain - 1, budget))
         alpha = max(alpha, best)
         if (beta <= alpha) break
       }
       return best
-    } else {
-      var best = if (inCheck) Int.MAX_VALUE else stand
-      for (move in candidates) {
-        best = min(best, quiesce(Rules.apply(state, move), alpha, beta, remain - 1))
-        beta = min(beta, best)
-        if (beta <= alpha) break
-      }
-      return best
     }
+    var best = if (inCheck) INF else stand
+    for (move in candidates) {
+      if (budget.expired()) break
+      best = min(best, quiesce(Rules.apply(state, move), alpha, beta, remain - 1, budget))
+      beta = min(beta, best)
+      if (beta <= alpha) break
+    }
+    return best
   }
 
   private fun orderedMoves(state: GameState, moves: List<Move>): List<Move> =
@@ -129,7 +185,11 @@ object Engine {
     when (state.status) {
       GameStatus.CHECKMATE ->
         return if (state.sideToMove == Side.WHITE) -30_000 else 30_000
-      GameStatus.STALEMATE -> return 0
+      GameStatus.STALEMATE,
+      GameStatus.DRAW_REPETITION,
+      GameStatus.DRAW_FIFTY,
+      GameStatus.DRAW_INSUFFICIENT,
+      -> return 0
       else -> Unit
     }
     var score = 0
@@ -187,4 +247,20 @@ object Engine {
       -40, -20, 0, 0, 0, 0, -20, -40,
       -50, -40, -30, -30, -30, -30, -40, -50,
     )
+}
+
+private const val INF = 100_000
+
+private class SearchBudget(private val deadlineNanos: Long) {
+  var timedOut: Boolean = false
+    private set
+
+  fun expired(): Boolean {
+    if (timedOut) return true
+    if (deadlineNanos != Long.MAX_VALUE && System.nanoTime() >= deadlineNanos) {
+      timedOut = true
+      return true
+    }
+    return false
+  }
 }

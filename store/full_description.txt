@@ -1,0 +1,19 @@
+Sit down at the board. Choose a square. Move.
+
+Chess is a single-player game against the computer. There is no account, no online match, and no ads. You play White. The CPU plays Black. Games are saved on the device so you can resume later.
+
+PLAY
+Tap a piece, then tap where it should go. Legal squares highlight. Castling, en passant, and promotion work as they should. Undo takes back a pair of moves. Start a new game when you are ready. The computer answers on its own.
+
+STRENGTH
+Three levels: Easy, Medium, and Hard. Medium is the everyday opponent. Hard thinks a little longer and looks further. Pick a level from the board without resetting the game.
+
+WHAT THIS APP IS NOT
+Not online multiplayer. Not puzzles. Not openings books or cloud engines. No sign-in, no ads, no in-app purchases. Ratings and clubs are someone else's product.
+
+CREDITS
+Chess piece graphics by Colin M.L. Burnett, BSD license.
+
+Portrait or landscape. Phone or tablet. Offline.
+
+Chess. Tap a piece. Move.

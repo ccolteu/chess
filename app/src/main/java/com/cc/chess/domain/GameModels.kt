@@ -58,7 +58,17 @@ enum class GameStatus {
   CHECK,
   CHECKMATE,
   STALEMATE,
+  DRAW_REPETITION,
+  DRAW_FIFTY,
+  DRAW_INSUFFICIENT,
 }
+
+fun GameStatus.isOver(): Boolean =
+  this == GameStatus.CHECKMATE ||
+    this == GameStatus.STALEMATE ||
+    this == GameStatus.DRAW_REPETITION ||
+    this == GameStatus.DRAW_FIFTY ||
+    this == GameStatus.DRAW_INSUFFICIENT
 
 data class GameState(
   val squares: List<Piece?>,

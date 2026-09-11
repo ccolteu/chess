@@ -2,27 +2,40 @@ package com.cc.chess.domain
 
 object Rules {
   fun legalMoves(state: GameState): List<Move> {
-    if (state.status == GameStatus.CHECKMATE || state.status == GameStatus.STALEMATE) return emptyList()
+    if (state.status.isOver()) return emptyList()
     return pseudoLegalMoves(state).filter { move -> !leavesKingInCheck(state, move) }
   }
 
-  fun apply(state: GameState, move: Move): GameState {
+  fun apply(state: GameState, move: Move, priorKeys: List<PositionKey> = emptyList()): GameState {
     val next = applyUnchecked(state, move)
-    return withStatus(next)
+    return withStatus(next, priorKeys)
   }
 
-  fun withStatus(state: GameState): GameState {
+  fun withStatus(state: GameState, priorKeys: List<PositionKey> = emptyList()): GameState {
     val legal = pseudoLegalMoves(state).filter { move -> !leavesKingInCheck(state, move) }
     val inCheck = isSquareAttacked(state.squares, kingSquare(state.squares, state.sideToMove), state.sideToMove.opposite())
+    val key = positionKey(state)
+    val repetitions = priorKeys.count { it == key } + 1
     val status =
       when {
         legal.isEmpty() && inCheck -> GameStatus.CHECKMATE
         legal.isEmpty() -> GameStatus.STALEMATE
+        insufficientMaterial(state.squares) -> GameStatus.DRAW_INSUFFICIENT
+        state.halfmoveClock >= 100 -> GameStatus.DRAW_FIFTY
+        repetitions >= 3 -> GameStatus.DRAW_REPETITION
         inCheck -> GameStatus.CHECK
         else -> GameStatus.IN_PROGRESS
       }
     return state.copy(status = status)
   }
+
+  fun positionKey(state: GameState): PositionKey =
+    PositionKey(
+      squares = state.squares,
+      sideToMove = state.sideToMove,
+      castling = state.castling,
+      enPassant = relevantEnPassant(state),
+    )
 
   private fun applyUnchecked(state: GameState, move: Move): GameState {
     val board = state.squares.toMutableList()
@@ -295,6 +308,39 @@ object Rules {
     return if (f in 0..7 && r in 0..7) Square(f, r) else null
   }
 
+  private fun relevantEnPassant(state: GameState): Square? {
+    val ep = state.enPassant ?: return null
+    val fromRank = if (state.sideToMove == Side.WHITE) ep.rank - 1 else ep.rank + 1
+    for (df in intArrayOf(-1, 1)) {
+      val file = ep.file + df
+      if (file !in 0..7 || fromRank !in 0..7) continue
+      val pawn = state.pieceAt(Square(file, fromRank)) ?: continue
+      if (pawn.type == PieceType.PAWN && pawn.side == state.sideToMove) return ep
+    }
+    return null
+  }
+
+  private fun insufficientMaterial(squares: List<Piece?>): Boolean {
+    val pieces = squares.mapIndexedNotNull { index, piece -> piece?.let { index to it } }
+    if (pieces.any { (_, piece) -> piece.type == PieceType.QUEEN || piece.type == PieceType.ROOK || piece.type == PieceType.PAWN }) {
+      return false
+    }
+    val minors = pieces.filter { it.second.type != PieceType.KING }
+    if (minors.isEmpty()) return true
+    if (minors.size == 1) {
+      val type = minors[0].second.type
+      return type == PieceType.BISHOP || type == PieceType.KNIGHT
+    }
+    if (minors.size == 2 && minors.all { it.second.type == PieceType.BISHOP }) {
+      val (indexA, pieceA) = minors[0]
+      val (indexB, pieceB) = minors[1]
+      if (pieceA.side == pieceB.side) return false
+      fun squareColor(index: Int) = (index % 8 + index / 8) % 2
+      return squareColor(indexA) == squareColor(indexB)
+    }
+    return false
+  }
+
   private val KNIGHT_DIRS =
     arrayOf(1 to 2, 2 to 1, 2 to -1, 1 to -2, -1 to -2, -2 to -1, -2 to 1, -1 to 2)
   private val BISHOP_DIRS = arrayOf(intArrayOf(1, 1), intArrayOf(1, -1), intArrayOf(-1, 1), intArrayOf(-1, -1))
@@ -302,3 +348,10 @@ object Rules {
   private val QUEEN_DIRS = BISHOP_DIRS + ROOK_DIRS
   private val PROMOTIONS = listOf(PieceType.QUEEN, PieceType.ROOK, PieceType.BISHOP, PieceType.KNIGHT)
 }
+
+data class PositionKey(
+  val squares: List<Piece?>,
+  val sideToMove: Side,
+  val castling: CastlingRights,
+  val enPassant: Square?,
+)

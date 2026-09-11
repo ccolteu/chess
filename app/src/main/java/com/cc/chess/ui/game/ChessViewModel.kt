@@ -19,6 +19,7 @@ import com.cc.chess.domain.Rules
 import com.cc.chess.domain.Side
 import com.cc.chess.domain.Square
 import com.cc.chess.domain.capturedOf
+import com.cc.chess.domain.isOver
 import com.cc.chess.engine.AiLevel
 import com.cc.chess.engine.Engine
 import kotlinx.coroutines.CoroutineDispatcher
@@ -41,8 +42,12 @@ data class GameUiState(
   val gameOver: Boolean = false,
   val moveRows: List<MoveRow> = emptyList(),
   val canUndo: Boolean = false,
+  val canNewGame: Boolean = false,
   val askResume: Boolean = false,
   val askConfirmNewGame: Boolean = false,
+  val askOutcome: Boolean = false,
+  val outcome: GameStatus? = null,
+  val outcomeSideToMove: Side? = null,
   val aiLevel: AiLevel = AiLevel.MEDIUM,
   val cpuCaptures: List<Piece> = emptyList(),
   val playerCaptures: List<Piece> = emptyList(),
@@ -69,6 +74,7 @@ class ChessViewModel(
   private var turnStartedAt = 0L
   private var aiEpoch = 0
   private var aiJob: Job? = null
+  private var showOutcome = false
   private var aiLevel: AiLevel = store.loadAiLevel()
   private val game: GameState
     get() = history.current
@@ -140,11 +146,9 @@ class ChessViewModel(
   }
 
   fun requestNewGame() {
-    if (history.moves.isEmpty()) {
-      newGame()
-    } else {
-      _ui.update { it.copy(askConfirmNewGame = true) }
-    }
+    if (history.moves.isEmpty()) return
+    showOutcome = false
+    _ui.update { it.copy(askConfirmNewGame = true, askOutcome = false) }
   }
 
   fun confirmNewGame() {
@@ -155,11 +159,17 @@ class ChessViewModel(
     _ui.update { it.copy(askConfirmNewGame = false) }
   }
 
+  fun dismissOutcome() {
+    showOutcome = false
+    _ui.update { it.copy(askOutcome = false) }
+  }
+
   fun newGame() {
     dropAiSearch()
     history.reset()
     pendingPromotions = emptyList()
     pendingSaved = emptyList()
+    showOutcome = false
     resetClocks()
     startRunning(Side.WHITE)
     persist()
@@ -191,6 +201,7 @@ class ChessViewModel(
     val removing = if (history.moves.size % 2 == 0) 2 else 1
     history.undoTurn()
     pendingPromotions = emptyList()
+    showOutcome = false
     if (removing >= 2 && cpuLegs.isNotEmpty()) cpuLegs.removeAt(cpuLegs.lastIndex)
     if (playerLegs.isNotEmpty()) playerLegs.removeAt(playerLegs.lastIndex)
     startRunning(Side.WHITE)
@@ -210,6 +221,7 @@ class ChessViewModel(
     commitRunning(now)
     history.apply(move)
     if (isOver()) {
+      showOutcome = true
       startRunning(null, now)
       persist()
       _ui.value = toUi()
@@ -238,7 +250,10 @@ class ChessViewModel(
         if (!isActive || epoch != aiEpoch) return@launch
         val now = nowMs()
         commitRunning(now)
-        if (move != null) history.apply(move)
+        val legal = Rules.legalMoves(game)
+        val playable = move?.takeIf { it in legal } ?: legal.firstOrNull()
+        if (playable != null) history.apply(playable)
+        if (isOver()) showOutcome = true
         if (!isOver() && game.sideToMove == Side.WHITE) startRunning(Side.WHITE, now) else startRunning(null, now)
         persist()
         _ui.value = toUi()
@@ -297,8 +312,7 @@ class ChessViewModel(
     super.onCleared()
   }
 
-  private fun isOver(): Boolean =
-    game.status == GameStatus.CHECKMATE || game.status == GameStatus.STALEMATE
+  private fun isOver(): Boolean = game.status.isOver()
 
   private fun toUi(aiThinking: Boolean = false): GameUiState {
     return GameUiState(
@@ -308,6 +322,10 @@ class ChessViewModel(
       isAiThinking = aiThinking,
       moveRows = history.rows,
       canUndo = history.canUndoTurn(aiThinking),
+      canNewGame = history.moves.isNotEmpty(),
+      askOutcome = showOutcome && isOver(),
+      outcome = if (isOver()) game.status else null,
+      outcomeSideToMove = if (isOver()) game.sideToMove else null,
       aiLevel = aiLevel,
       cpuCaptures = capturedOf(Side.WHITE, game.squares),
       playerCaptures = capturedOf(Side.BLACK, game.squares),

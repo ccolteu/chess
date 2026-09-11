@@ -97,5 +97,24 @@ class GameHistoryTest {
     assertFalse(history.isResumable)
   }
 
+  @Test
+  fun knightOscillation_isThreefoldDraw() {
+    val history = GameHistory()
+    listOf(
+        move("g1", "f3"),
+        move("b8", "c6"),
+        move("f3", "g1"),
+        move("c6", "b8"),
+        move("g1", "f3"),
+        move("b8", "c6"),
+        move("f3", "g1"),
+        move("c6", "b8"),
+      )
+      .forEach { history.apply(it) }
+    assertEquals(GameStatus.DRAW_REPETITION, history.current.status)
+    assertFalse(history.isResumable)
+    assertTrue(history.canUndoTurn(aiThinking = false))
+  }
+
   private fun move(from: String, to: String) = Move(Square.parse(from), Square.parse(to))
 }

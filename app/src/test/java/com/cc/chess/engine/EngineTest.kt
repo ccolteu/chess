@@ -35,4 +35,12 @@ class EngineTest {
     assertEquals(Square.parse("c6"), move!!.from)
     assertEquals(Square.parse("d4"), move.to)
   }
+
+  @Test
+  fun hard_startPosition_returnsLegalMove() {
+    val state = startingGame()
+    val move = Engine.chooseMove(state, AiLevel.HARD, Random(0))
+    assertNotNull(move)
+    assertTrue(Rules.legalMoves(state).contains(move))
+  }
 }

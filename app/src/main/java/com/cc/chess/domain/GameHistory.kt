@@ -31,7 +31,7 @@ class GameHistory(initial: GameState = startingGame()) {
   }
 
   fun apply(move: Move): GameState {
-    val next = Rules.apply(current, move)
+    val next = Rules.apply(current, move, positions.map { Rules.positionKey(it) })
     notations += formatMove(move)
     applied += move
     positions += next
@@ -61,8 +61,7 @@ class GameHistory(initial: GameState = startingGame()) {
     moves.forEach { apply(it) }
   }
 
-  private fun isOver(state: GameState): Boolean =
-    state.status == GameStatus.CHECKMATE || state.status == GameStatus.STALEMATE
+  private fun isOver(state: GameState): Boolean = state.status.isOver()
 }
 
 fun formatMove(move: Move): String {

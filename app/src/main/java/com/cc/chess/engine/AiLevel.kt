@@ -5,10 +5,11 @@ enum class AiLevel(
   val depth: Int,
   val topMoves: Int,
   val quiescence: Boolean,
+  val thinkMs: Long = 0L,
 ) {
   EASY(label = "Easy", depth = 2, topMoves = 3, quiescence = false),
   MEDIUM(label = "Medium", depth = 3, topMoves = 1, quiescence = false),
-  HARD(label = "Hard", depth = 4, topMoves = 1, quiescence = true),
+  HARD(label = "Hard", depth = 4, topMoves = 1, quiescence = true, thinkMs = 400L),
   ;
 
   companion object {

@@ -1,0 +1,1 @@
+First Play Store release. Play White against the computer at three strengths. Games resume on this device. Offline. No ads.

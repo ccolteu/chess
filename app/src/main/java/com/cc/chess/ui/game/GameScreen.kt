@@ -74,6 +74,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import com.cc.chess.R
+import com.cc.chess.domain.GameStatus
 import com.cc.chess.domain.MoveRow
 import com.cc.chess.domain.Piece
 import com.cc.chess.domain.PieceType
@@ -299,7 +300,7 @@ private fun HudBar(
 @Composable
 private fun GameActions(state: GameUiState, viewModel: ChessViewModel) {
   Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-    HudButton(onClick = viewModel::requestNewGame, label = "New")
+    HudButton(onClick = viewModel::requestNewGame, label = "New", enabled = state.canNewGame)
     AiLevelMenu(level = state.aiLevel, onPick = viewModel::setAiLevel)
     HudButton(onClick = viewModel::undo, label = "Undo", enabled = state.canUndo)
   }
@@ -464,7 +465,38 @@ private fun GameDialogs(state: GameUiState, viewModel: ChessViewModel) {
       onDismiss = viewModel::startNewGameFromPrompt,
     )
   }
+  val outcome = state.outcome
+  val side = state.outcomeSideToMove
+  if (state.askOutcome && outcome != null && side != null && !state.askConfirmNewGame && !state.askResume) {
+    val copy = outcomeCopy(outcome, side)
+    TableDialog(
+      title = copy.first,
+      text = copy.second,
+      confirmLabel = "OK",
+      onConfirm = viewModel::dismissOutcome,
+      onDismissRequest = viewModel::dismissOutcome,
+    )
+  }
 }
+
+internal fun outcomeCopy(status: GameStatus, sideToMove: Side): Pair<String, String> =
+  when (status) {
+    GameStatus.CHECKMATE ->
+      if (sideToMove == Side.WHITE) {
+        "Checkmate" to "The CPU wins. Your king has no escape."
+      } else {
+        "Checkmate" to "You win. The CPU's king has no escape."
+      }
+    GameStatus.STALEMATE ->
+      "Draw" to "Stalemate. The side to move has no legal move and is not in check."
+    GameStatus.DRAW_REPETITION ->
+      "Draw" to "The same position occurred three times."
+    GameStatus.DRAW_FIFTY ->
+      "Draw" to "Fifty moves passed with no capture or pawn move."
+    GameStatus.DRAW_INSUFFICIENT ->
+      "Draw" to "Neither side has enough material to checkmate."
+    else -> "Game over" to "The game has ended."
+  }
 
 @Composable
 private fun AiLevelMenu(level: AiLevel, onPick: (AiLevel) -> Unit) {

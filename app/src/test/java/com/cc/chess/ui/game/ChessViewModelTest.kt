@@ -2,8 +2,11 @@ package com.cc.chess.ui.game
 
 import com.cc.chess.data.GameStore
 import com.cc.chess.engine.AiLevel
+import com.cc.chess.domain.GameStatus
 import com.cc.chess.domain.Move
+import com.cc.chess.domain.Rules
 import com.cc.chess.domain.Square
+import com.cc.chess.domain.startingGame
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -64,6 +67,7 @@ class ChessViewModelTest {
   @Test
   fun requestNewGame_onEmptyBoard_doesNotAsk() {
     val vm = ChessViewModel(MemoryGameStore(), chooseAiMove = { _, _ -> null })
+    assertFalse(vm.uiState.value.canNewGame)
     vm.requestNewGame()
     assertFalse(vm.uiState.value.askConfirmNewGame)
     assertTrue(vm.uiState.value.moveRows.isEmpty())
@@ -74,6 +78,7 @@ class ChessViewModelTest {
     val store = MemoryGameStore(listOf(move("e2", "e4"), move("e7", "e5")))
     val vm = ChessViewModel(store, chooseAiMove = { _, _ -> null })
     vm.resumeSavedGame()
+    assertTrue(vm.uiState.value.canNewGame)
     vm.requestNewGame()
     assertTrue(vm.uiState.value.askConfirmNewGame)
     assertEquals(1, vm.uiState.value.moveRows.size)
@@ -99,6 +104,7 @@ class ChessViewModelTest {
     vm.requestNewGame()
     vm.confirmNewGame()
     assertFalse(vm.uiState.value.askConfirmNewGame)
+    assertFalse(vm.uiState.value.canNewGame)
     assertTrue(vm.uiState.value.moveRows.isEmpty())
     assertTrue(store.load().isEmpty())
   }
@@ -131,6 +137,22 @@ class ChessViewModelTest {
     vm.onSquareClicked(Square.parse("e4"))
     advanceUntilIdle()
     assertEquals(listOf(move("e2", "e4"), move("e7", "e5")), store.load())
+  }
+
+  @Test
+  fun illegalAiMove_doesNotCrashAndPlaysALegalMove() = runTest(dispatcher) {
+    val store = MemoryGameStore()
+    val vm =
+      ChessViewModel(store, chooseAiMove = { _, _ -> move("a7", "a4") }, computeDispatcher = dispatcher)
+    vm.onSquareClicked(Square.parse("e2"))
+    vm.onSquareClicked(Square.parse("e4"))
+    advanceUntilIdle()
+    assertEquals(2, store.load().size)
+    assertEquals(move("e2", "e4"), store.load()[0])
+    val afterWhite = Rules.apply(startingGame(), move("e2", "e4"))
+    assertTrue(store.load()[1] in Rules.legalMoves(afterWhite))
+    assertFalse(vm.uiState.value.isAiThinking)
+    assertFalse(vm.uiState.value.gameOver)
   }
 
   @Test
@@ -200,6 +222,36 @@ class ChessViewModelTest {
     vm.resumeSavedGame()
     assertEquals(12_000L, vm.uiState.value.playerThinkMs)
     assertEquals(9_000L, vm.uiState.value.cpuThinkMs)
+  }
+
+  @Test
+  fun checkmate_showsOutcomeUntilDismissed() = runTest(dispatcher) {
+    val replies = ArrayDeque(listOf(move("e7", "e5"), move("b8", "c6"), move("g8", "f6")))
+    val vm =
+      ChessViewModel(
+        MemoryGameStore(),
+        chooseAiMove = { _, _ -> replies.removeFirst() },
+        computeDispatcher = dispatcher,
+      )
+    play(vm, "e2", "e4")
+    advanceUntilIdle()
+    play(vm, "d1", "h5")
+    advanceUntilIdle()
+    play(vm, "f1", "c4")
+    advanceUntilIdle()
+    play(vm, "h5", "f7")
+    advanceUntilIdle()
+    assertTrue(vm.uiState.value.gameOver)
+    assertTrue(vm.uiState.value.askOutcome)
+    assertEquals(GameStatus.CHECKMATE, vm.uiState.value.outcome)
+    vm.dismissOutcome()
+    assertFalse(vm.uiState.value.askOutcome)
+    assertTrue(vm.uiState.value.gameOver)
+  }
+
+  private fun play(vm: ChessViewModel, from: String, to: String) {
+    vm.onSquareClicked(Square.parse(from))
+    vm.onSquareClicked(Square.parse(to))
   }
 
   private fun move(from: String, to: String) = Move(Square.parse(from), Square.parse(to))

@@ -79,5 +79,53 @@ class RulesTest {
     assertTrue(Rules.legalMoves(state).isEmpty())
   }
 
+  @Test
+  fun kingsOnly_isInsufficientMaterial() {
+    val state = Rules.withStatus(Fen.parse("4k3/8/8/8/8/8/8/4K3 w - - 0 1"))
+    assertEquals(GameStatus.DRAW_INSUFFICIENT, state.status)
+    assertTrue(Rules.legalMoves(state).isEmpty())
+  }
+
+  @Test
+  fun kingAndBishopVsKing_isInsufficientMaterial() {
+    val state = Rules.withStatus(Fen.parse("4k3/8/8/8/8/8/8/4KB2 w - - 0 1"))
+    assertEquals(GameStatus.DRAW_INSUFFICIENT, state.status)
+  }
+
+  @Test
+  fun kingAndKnightVsKing_isInsufficientMaterial() {
+    val state = Rules.withStatus(Fen.parse("4k3/8/8/8/8/8/8/4KN2 w - - 0 1"))
+    assertEquals(GameStatus.DRAW_INSUFFICIENT, state.status)
+  }
+
+  @Test
+  fun oppositeBishopsSameColor_isInsufficientMaterial() {
+    val state = Rules.withStatus(Fen.parse("4k3/8/8/8/8/8/b7/4KB2 w - - 0 1"))
+    assertEquals(GameStatus.DRAW_INSUFFICIENT, state.status)
+  }
+
+  @Test
+  fun twoKnightsVsKing_isNotInsufficient() {
+    val state = Rules.withStatus(Fen.parse("4k3/8/8/8/8/8/8/4KNN1 w - - 0 1"))
+    assertTrue(state.status == GameStatus.IN_PROGRESS || state.status == GameStatus.CHECK)
+  }
+
+  @Test
+  fun fiftyQuietHalfMoves_isDraw() {
+    val before = Rules.withStatus(Fen.parse("4k3/8/8/8/8/8/8/3QK3 w - - 99 50"))
+    assertEquals(GameStatus.IN_PROGRESS, before.status)
+    val after = Rules.apply(before, Move(Square.parse("e1"), Square.parse("e2")))
+    assertEquals(100, after.halfmoveClock)
+    assertEquals(GameStatus.DRAW_FIFTY, after.status)
+    assertTrue(Rules.legalMoves(after).isEmpty())
+  }
+
+  @Test
+  fun checkmate_beatsFiftyMoveClock() {
+    val before = Rules.withStatus(Fen.parse("7k/8/5QK1/8/8/8/8/8 w - - 99 1"))
+    val mate = Rules.apply(before, Move(Square.parse("f6"), Square.parse("g7")))
+    assertEquals(GameStatus.CHECKMATE, mate.status)
+  }
+
   private fun move(from: String, to: String) = Move(Square.parse(from), Square.parse(to))
 }
