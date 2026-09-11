@@ -2,14 +2,13 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.android)
   alias(libs.plugins.compose.compiler)
-  alias(libs.plugins.kotlin.serialization)
 }
 
 android {
-    namespace = "com.example.chess"
+    namespace = "com.cc.chess"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.example.chess"
+        applicationId = "com.cc.chess"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -77,9 +76,4 @@ dependencies {
   androidTestImplementation(libs.androidx.test.ext.junit)
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.espresso.core)
-
-  // Navigation
-  implementation(libs.androidx.navigation3.ui)
-  implementation(libs.androidx.navigation3.runtime)
-  implementation(libs.androidx.lifecycle.viewmodel.navigation3)
 }
