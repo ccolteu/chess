@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.defaultMinSize
@@ -37,11 +38,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,11 +58,14 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.min
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -68,7 +74,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -118,27 +123,53 @@ fun GameScreen(modifier: Modifier = Modifier) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
       val landscape = maxWidth > maxHeight
-      val hudPieceSize = boardPieceSize(min(maxWidth, maxHeight) - 16.dp * 2 - BoardFrameInset * 2)
+      val isTablet = LocalConfiguration.current.smallestScreenWidthDp >= TABLET_SMALLEST_WIDTH_DP
+      val boardSide =
+        tabletBoardSide(
+          windowW = maxWidth,
+          windowH = maxHeight,
+          landscape = landscape,
+          hudGutter = TabletHudGutter,
+          margin = TabletBoardMargin,
+        )
+      val hudPieceSize =
+        if (isTablet) {
+          min(boardPieceSize(boardSide - BoardChromePad * 2 - BoardFrameInset * 2), TabletHudChrome.stripMin)
+        } else {
+          boardPieceSize(min(maxWidth, maxHeight) - 16.dp * 2 - BoardFrameInset * 2)
+        }
       Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = Color.Transparent,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
       ) {
-        if (landscape) {
-          LandscapePlay(
-            state = state,
-            viewModel = viewModel,
-            edgeInset = ScreenInnerPad,
-            hudPieceSize = hudPieceSize,
-            modifier = Modifier.fillMaxSize().padding(horizontal = SafeEdgePad),
-          )
-        } else {
-          PortraitPlay(
-            state = state,
-            viewModel = viewModel,
-            hudPieceSize = hudPieceSize,
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = SafeEdgePad),
-          )
+        when {
+          isTablet ->
+            CompositionLocalProvider(LocalHudChrome provides TabletHudChrome) {
+              TabletPlay(
+                state = state,
+                viewModel = viewModel,
+                landscape = landscape,
+                boardSide = boardSide,
+                hudPieceSize = hudPieceSize,
+                modifier = Modifier.fillMaxSize(),
+              )
+            }
+          landscape ->
+            LandscapePlay(
+              state = state,
+              viewModel = viewModel,
+              edgeInset = ScreenInnerPad,
+              hudPieceSize = hudPieceSize,
+              modifier = Modifier.fillMaxSize().padding(horizontal = SafeEdgePad),
+            )
+          else ->
+            PortraitPlay(
+              state = state,
+              viewModel = viewModel,
+              hudPieceSize = hudPieceSize,
+              modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = SafeEdgePad),
+            )
         }
       }
     }
@@ -151,8 +182,81 @@ private val ScreenInnerPad = 8.dp
 private val BoardChromePad = 12.dp
 private val BoardFrameInset = 18.dp
 private val ControlChromeGap = 10.dp
+private const val TABLET_SMALLEST_WIDTH_DP = 600
+private val TabletBoardMargin = 32.dp
+private val TabletHudGutter = 300.dp
+private val PhoneHudChrome =
+  HudChrome(
+    buttonHeight = 34.dp,
+    labelSize = 12.sp,
+    labelLine = 14.sp,
+    titleSize = 26.sp,
+    titleLine = 30.sp,
+    stripMin = 34.dp,
+    clockPad = 8.dp,
+    actionGap = 8.dp,
+    menuLabelSize = 13.sp,
+    buttonPad = 10.dp,
+    notepadSize = 16.sp,
+    notepadLine = 22.sp,
+    notepadRow = 22.dp,
+    notepadNumberWidth = 28.dp,
+  )
+private val TabletHudChrome =
+  HudChrome(
+    buttonHeight = 42.dp,
+    labelSize = 14.sp,
+    labelLine = 16.sp,
+    titleSize = 32.sp,
+    titleLine = 36.sp,
+    stripMin = 50.dp,
+    clockPad = 12.dp,
+    actionGap = 10.dp,
+    menuLabelSize = 15.sp,
+    buttonPad = 14.dp,
+    notepadSize = 22.sp,
+    notepadLine = 30.sp,
+    notepadRow = 30.dp,
+    notepadNumberWidth = 36.dp,
+  )
+private val LocalHudChrome = staticCompositionLocalOf { PhoneHudChrome }
+private val TabletPortraitHudChrome =
+  TabletHudChrome.buttonHeight +
+    ControlChromeGap +
+    TabletHudChrome.stripMin +
+    TabletHudChrome.stripMin +
+    ControlChromeGap +
+    120.dp
+
+private data class HudChrome(
+  val buttonHeight: Dp,
+  val labelSize: TextUnit,
+  val labelLine: TextUnit,
+  val titleSize: TextUnit,
+  val titleLine: TextUnit,
+  val stripMin: Dp,
+  val clockPad: Dp,
+  val actionGap: Dp,
+  val menuLabelSize: TextUnit,
+  val buttonPad: Dp,
+  val notepadSize: TextUnit,
+  val notepadLine: TextUnit,
+  val notepadRow: Dp,
+  val notepadNumberWidth: Dp,
+)
 
 private fun boardPieceSize(innerBoard: Dp): Dp = innerBoard / 8 * 0.9f
+
+internal fun tabletBoardSide(windowW: Dp, windowH: Dp, landscape: Boolean, hudGutter: Dp, margin: Dp): Dp {
+  if (landscape) {
+    val maxW = (windowW - margin * 3 - hudGutter).coerceAtLeast(1.dp)
+    val maxH = (windowH - margin * 2).coerceAtLeast(1.dp)
+    return min(maxH, maxW)
+  }
+  val maxW = (windowW - margin * 2).coerceAtLeast(1.dp)
+  val maxH = (windowH - margin * 4 - TabletPortraitHudChrome).coerceAtLeast(1.dp)
+  return min(maxH, maxW)
+}
 
 @Composable
 private fun PortraitPlay(
@@ -201,6 +305,87 @@ private fun PortraitPlay(
 }
 
 @Composable
+private fun TabletPlay(
+  state: GameUiState,
+  viewModel: ChessViewModel,
+  landscape: Boolean,
+  boardSide: Dp,
+  hudPieceSize: Dp,
+  modifier: Modifier = Modifier,
+) {
+  if (landscape) {
+    Row(
+      modifier = modifier.fillMaxSize().padding(TabletBoardMargin),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      PlayBoard(state = state, viewModel = viewModel, modifier = Modifier.size(boardSide))
+      Spacer(Modifier.width(TabletBoardMargin))
+      SideHud(
+        state = state,
+        viewModel = viewModel,
+        hudPieceSize = hudPieceSize,
+        stackedBar = true,
+        modifier = Modifier.weight(1f).height(boardSide).padding(bottom = BoardChromePad),
+      )
+    }
+  } else {
+    BoxWithConstraints(
+      modifier = modifier.fillMaxSize().padding(TabletBoardMargin),
+      contentAlignment = Alignment.TopCenter,
+    ) {
+      val side = min(min(boardSide, maxWidth), maxHeight)
+      Column(
+        modifier = Modifier.width(side).fillMaxHeight(),
+        horizontalAlignment = Alignment.End,
+      ) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = BoardChromePad),
+          horizontalAlignment = Alignment.End,
+        ) {
+          HudBar(
+            state = state,
+            viewModel = viewModel,
+            modifier = Modifier.fillMaxWidth().padding(bottom = ControlChromeGap),
+          )
+          SeatStrip(
+            icon = R.drawable.ic_seat_cpu,
+            iconDescription = "CPU",
+            captures = state.cpuCaptures,
+            committedMs = state.cpuThinkMs,
+            running = state.clockRunning == Side.BLACK,
+            startedAt = state.clockStartedAt,
+            pieceSize = hudPieceSize,
+            modifier = Modifier.fillMaxWidth().padding(bottom = TabletBoardMargin),
+            contentPadding = 0.dp,
+          )
+        }
+        PlayBoard(state = state, viewModel = viewModel, modifier = Modifier.size(side))
+        Column(
+          modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = BoardChromePad),
+          horizontalAlignment = Alignment.End,
+        ) {
+          SeatStrip(
+            icon = R.drawable.ic_seat_player,
+            iconDescription = "You",
+            captures = state.playerCaptures,
+            committedMs = state.playerThinkMs,
+            running = state.clockRunning == Side.WHITE,
+            startedAt = state.clockStartedAt,
+            pieceSize = hudPieceSize,
+            modifier = Modifier.fillMaxWidth().padding(top = TabletBoardMargin),
+            contentPadding = 0.dp,
+          )
+          MoveList(
+            rows = state.moveRows,
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(top = ControlChromeGap),
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
 private fun LandscapePlay(
   state: GameUiState,
   viewModel: ChessViewModel,
@@ -209,49 +394,71 @@ private fun LandscapePlay(
   modifier: Modifier = Modifier,
 ) {
   Row(modifier = modifier.fillMaxSize(), verticalAlignment = Alignment.Top) {
-      PlayBoard(
-        state = state,
-        viewModel = viewModel,
-        modifier =
-          Modifier
-            .padding(start = edgeInset, top = edgeInset, bottom = edgeInset)
-            .fillMaxHeight()
-            .aspectRatio(1f, matchHeightConstraintsFirst = true),
-      )
-      Column(
-        modifier =
-          Modifier
-            .weight(1f)
-            .fillMaxHeight()
-            .padding(start = edgeInset, end = edgeInset, top = edgeInset, bottom = edgeInset),
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(ControlChromeGap),
-      ) {
-        HudBar(state = state, viewModel = viewModel, stacked = true)
-        SeatStrip(
-          icon = R.drawable.ic_seat_cpu,
-          iconDescription = "CPU",
-          captures = state.cpuCaptures,
-          committedMs = state.cpuThinkMs,
-          running = state.clockRunning == Side.BLACK,
-          startedAt = state.clockStartedAt,
-          pieceSize = hudPieceSize,
-          modifier = Modifier.fillMaxWidth(),
-          contentPadding = 0.dp,
-        )
-        SeatStrip(
-          icon = R.drawable.ic_seat_player,
-          iconDescription = "You",
-          captures = state.playerCaptures,
-          committedMs = state.playerThinkMs,
-          running = state.clockRunning == Side.WHITE,
-          startedAt = state.clockStartedAt,
-          pieceSize = hudPieceSize,
-          modifier = Modifier.fillMaxWidth(),
-          contentPadding = 0.dp,
-        )
-        MoveList(rows = state.moveRows, modifier = Modifier.fillMaxWidth().weight(1f))
-      }
+    PlayBoard(
+      state = state,
+      viewModel = viewModel,
+      modifier =
+        Modifier
+          .padding(start = edgeInset, top = edgeInset, bottom = edgeInset)
+          .fillMaxHeight()
+          .aspectRatio(1f, matchHeightConstraintsFirst = true),
+    )
+    SideHud(
+      state = state,
+      viewModel = viewModel,
+      hudPieceSize = hudPieceSize,
+      stackedBar = true,
+      modifier =
+        Modifier
+          .weight(1f)
+          .fillMaxHeight()
+          .padding(
+            start = edgeInset,
+            end = edgeInset,
+            top = edgeInset,
+            bottom = edgeInset + BoardChromePad,
+          ),
+    )
+  }
+}
+
+@Composable
+private fun SideHud(
+  state: GameUiState,
+  viewModel: ChessViewModel,
+  hudPieceSize: Dp,
+  stackedBar: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  Column(
+    modifier = modifier,
+    horizontalAlignment = Alignment.End,
+    verticalArrangement = Arrangement.spacedBy(ControlChromeGap),
+  ) {
+    HudBar(state = state, viewModel = viewModel, stacked = stackedBar)
+    SeatStrip(
+      icon = R.drawable.ic_seat_cpu,
+      iconDescription = "CPU",
+      captures = state.cpuCaptures,
+      committedMs = state.cpuThinkMs,
+      running = state.clockRunning == Side.BLACK,
+      startedAt = state.clockStartedAt,
+      pieceSize = hudPieceSize,
+      modifier = Modifier.fillMaxWidth(),
+      contentPadding = 0.dp,
+    )
+    SeatStrip(
+      icon = R.drawable.ic_seat_player,
+      iconDescription = "You",
+      captures = state.playerCaptures,
+      committedMs = state.playerThinkMs,
+      running = state.clockRunning == Side.WHITE,
+      startedAt = state.clockStartedAt,
+      pieceSize = hudPieceSize,
+      modifier = Modifier.fillMaxWidth(),
+      contentPadding = 0.dp,
+    )
+    MoveList(rows = state.moveRows, modifier = Modifier.fillMaxWidth().weight(1f))
   }
 }
 
@@ -262,16 +469,17 @@ private fun HudBar(
   modifier: Modifier = Modifier,
   stacked: Boolean = false,
 ) {
+  val chrome = LocalHudChrome.current
   val title =
     @Composable {
       Text(
         text = "Chess",
         style =
           hudLabelStyle.copy(
-            fontSize = 26.sp,
+            fontSize = chrome.titleSize,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.8.sp,
-            lineHeight = 30.sp,
+            lineHeight = chrome.titleLine,
           ),
         color = Cream,
       )
@@ -299,7 +507,8 @@ private fun HudBar(
 
 @Composable
 private fun GameActions(state: GameUiState, viewModel: ChessViewModel) {
-  Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+  val chrome = LocalHudChrome.current
+  Row(horizontalArrangement = Arrangement.spacedBy(chrome.actionGap), verticalAlignment = Alignment.CenterVertically) {
     HudButton(onClick = viewModel::requestNewGame, label = "New", enabled = state.canNewGame)
     AiLevelMenu(level = state.aiLevel, onPick = viewModel::setAiLevel)
     HudButton(onClick = viewModel::undo, label = "Undo", enabled = state.canUndo)
@@ -344,8 +553,9 @@ private fun SeatStrip(
   modifier: Modifier = Modifier,
   contentPadding: Dp = 8.dp,
 ) {
+  val chrome = LocalHudChrome.current
   val timeText = formatThinkTime(tickingMs(committedMs, running, startedAt))
-  val stripHeight = max(pieceSize, 34.dp)
+  val stripHeight = max(pieceSize, chrome.stripMin)
   Row(
     modifier = modifier.height(stripHeight).padding(horizontal = contentPadding),
     verticalAlignment = Alignment.CenterVertically,
@@ -365,18 +575,21 @@ private fun SeatStrip(
 
 @Composable
 private fun SeatClock(timeText: String, running: Boolean, height: Dp) {
+  val chrome = LocalHudChrome.current
   Box(
     modifier =
       Modifier
         .height(height)
         .hudChrome()
-        .padding(horizontal = 8.dp),
+        .padding(horizontal = chrome.clockPad),
     contentAlignment = Alignment.Center,
   ) {
     Text(
       text = timeText,
       style =
         hudLabelStyle.copy(
+          fontSize = chrome.labelSize,
+          lineHeight = chrome.labelLine,
           fontFamily = FontFamily.Monospace,
           fontFeatureSettings = "tnum, lnum",
         ),
@@ -549,10 +762,15 @@ private fun Modifier.hudChrome(): Modifier =
 
 @Composable
 private fun HudButton(onClick: () -> Unit, label: String, modifier: Modifier = Modifier, enabled: Boolean = true) {
+  val chrome = LocalHudChrome.current
   Button(
     onClick = onClick,
     enabled = enabled,
-    modifier = modifier.defaultMinSize(minWidth = 0.dp, minHeight = 0.dp).height(34.dp).shadow(4.dp, hudButtonShape),
+    modifier =
+      modifier
+        .defaultMinSize(minWidth = 0.dp, minHeight = 0.dp)
+        .height(chrome.buttonHeight)
+        .shadow(4.dp, hudButtonShape),
     shape = hudButtonShape,
     border = BorderStroke(1.dp, Brass),
     colors =
@@ -562,10 +780,15 @@ private fun HudButton(onClick: () -> Unit, label: String, modifier: Modifier = M
         disabledContainerColor = WalnutRail,
         disabledContentColor = Cream.copy(alpha = 0.5f),
       ),
-    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+    contentPadding = PaddingValues(horizontal = chrome.buttonPad, vertical = 0.dp),
     elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
   ) {
-    Text(text = label, style = hudLabelStyle, maxLines = 1, textAlign = TextAlign.Center)
+    Text(
+      text = label,
+      style = hudLabelStyle.copy(fontSize = chrome.labelSize, lineHeight = chrome.labelLine),
+      maxLines = 1,
+      textAlign = TextAlign.Center,
+    )
   }
 }
 
@@ -577,9 +800,14 @@ private fun HudTextAction(
   selected: Boolean = false,
   enabled: Boolean = true,
 ) {
+  val chrome = LocalHudChrome.current
   Text(
     text = label,
-    style = hudLabelStyle.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold, fontSize = 13.sp),
+    style =
+      hudLabelStyle.copy(
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+        fontSize = chrome.menuLabelSize,
+      ),
     color = if (selected) Brass else Cream,
     textAlign = TextAlign.Center,
     maxLines = 1,
@@ -669,6 +897,8 @@ private fun BoardFrame(modifier: Modifier = Modifier, content: @Composable () ->
 
 @Composable
 private fun MoveList(rows: List<MoveRow>, modifier: Modifier = Modifier) {
+  val chrome = LocalHudChrome.current
+  val writing = PencilWriting.copy(fontSize = chrome.notepadSize, lineHeight = chrome.notepadLine)
   val listState = rememberLazyListState()
   LaunchedEffect(rows.size, rows.lastOrNull()?.black) {
     if (rows.isNotEmpty()) {
@@ -703,12 +933,12 @@ private fun MoveList(rows: List<MoveRow>, modifier: Modifier = Modifier) {
           .weight(1f)
           .fillMaxWidth()
           .clip(RectangleShape)
-          .drawBehind { drawNotepadSheet() },
+          .drawBehind { drawNotepadSheet(chrome.notepadRow) },
     ) {
       if (rows.isEmpty()) {
         Text(
           text = "MOVES WILL APPEAR HERE",
-          style = PencilWriting.copy(color = PencilLead.copy(alpha = 0.45f)),
+          style = writing.copy(color = PencilLead.copy(alpha = 0.45f)),
           modifier = Modifier.padding(start = 44.dp, top = 10.dp, end = 12.dp),
         )
       } else {
@@ -718,25 +948,25 @@ private fun MoveList(rows: List<MoveRow>, modifier: Modifier = Modifier) {
         ) {
           items(rows, key = { it.number }) { row ->
             Row(
-              modifier = Modifier.fillMaxWidth().height(22.dp),
+              modifier = Modifier.fillMaxWidth().height(chrome.notepadRow),
               horizontalArrangement = Arrangement.spacedBy(12.dp),
               verticalAlignment = Alignment.CenterVertically,
             ) {
               Text(
                 text = "${row.number}.".uppercase(),
-                style = PencilWriting.copy(color = PencilLead.copy(alpha = 0.72f)),
+                style = writing.copy(color = PencilLead.copy(alpha = 0.72f)),
                 maxLines = 1,
-                modifier = Modifier.width(28.dp),
+                modifier = Modifier.width(chrome.notepadNumberWidth),
               )
               Text(
                 text = row.white.uppercase(),
-                style = PencilWriting,
+                style = writing,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
               )
               Text(
                 text = row.black.orEmpty().uppercase(),
-                style = PencilWriting,
+                style = writing,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
               )
@@ -760,15 +990,15 @@ private val PencilWriting =
     color = PencilLead,
   )
 
-private fun DrawScope.drawNotepadSheet() {
+private fun DrawScope.drawNotepadSheet(rowHeight: Dp) {
   drawRect(NotepadPaper)
   val grain = Color.White.copy(alpha = 0.07f)
   val step = size.width / 14f
   for (i in 0..13) {
     drawRect(color = grain, topLeft = Offset(i * step + 1.2f, 0f), size = Size(1.1f, size.height))
   }
-  val lineStep = 22.dp.toPx()
-  var y = 22.dp.toPx()
+  val lineStep = rowHeight.toPx()
+  var y = lineStep
   while (y < size.height) {
     drawLine(color = NotepadRule, start = Offset(0f, y), end = Offset(size.width, y), strokeWidth = 1.2f)
     y += lineStep
